@@ -6,6 +6,7 @@ using FreePIE.Core.Contracts;
 using FreePIE.Core.Plugins.Strategies;
 using SlimDX.DirectInput;
 using SlimDX.RawInput;
+//using System.Windows.Forms;  // for Cursor.Position
 
 namespace FreePIE.Core.Plugins
 {
@@ -16,6 +17,11 @@ namespace FreePIE.Core.Plugins
         // Mouse position state variables
         private double deltaXOut;
         private double deltaYOut;
+        // and the same for absolute movement mode, see http://msdn.microsoft.com/en-us/library/windows/desktop/ms646273(v=vs.85).aspx for details
+        private const uint SCALING_FACTOR = 65535;
+        private uint XOut, YOut;
+        // set to false for relative (delta) movement mode
+        public bool absolute_mode = true;
         private int wheel;
         public const int WheelMax = 120;
 
@@ -82,12 +88,19 @@ namespace FreePIE.Core.Plugins
         public override void DoBeforeNextExecute()
         {
             // If a mouse command was given in the script, issue it all at once right here
-            if ((int)deltaXOut != 0 || (int)deltaYOut != 0 || wheel != 0)
+            if ((int)deltaXOut != 0 || (int)deltaYOut != 0 || (int)XOut != 0 || (int)YOut != 0 || wheel != 0)
             {
 
                 var input = new MouseKeyIO.INPUT[1];
                 input[0].type = MouseKeyIO.INPUT_MOUSE;
-                input[0].mi = MouseInput((int)deltaXOut, (int)deltaYOut, (uint)wheel, 0, MouseKeyIO.MOUSEEVENTF_MOVE | MouseKeyIO.MOUSEEVENTF_WHEEL);
+                if (absolute_mode)
+                {
+                    input[0].mi = MouseInput((int)XOut, (int)YOut, (uint)wheel, 0, MouseKeyIO.MOUSEEVENTF_MOVE | MouseKeyIO.MOUSEEVENTF_ABSOLUTE | MouseKeyIO.MOUSEEVENTF_WHEEL);
+                }
+                else
+                {
+                    input[0].mi = MouseInput((int)deltaXOut, (int)deltaYOut, (uint)wheel, 0, MouseKeyIO.MOUSEEVENTF_MOVE | MouseKeyIO.MOUSEEVENTF_WHEEL);
+                }
 
                 MouseKeyIO.SendInput(1, input, Marshal.SizeOf(input[0].GetType()));
 
@@ -101,6 +114,15 @@ namespace FreePIE.Core.Plugins
                     deltaYOut = deltaYOut - (int)deltaYOut;
                 }
 
+                if ((int)XOut != 0)
+                {
+                    XOut = 0;
+                }
+                if ((int)YOut != 0)
+                {
+                    YOut = 0;
+                }
+
                 wheel = 0;
             }
 
@@ -109,13 +131,53 @@ namespace FreePIE.Core.Plugins
             setButtonPressedStrategy.Do();
         }
 
-        public double DeltaX
+        /*
+         * Input: X coordinate as a normalised value (0..1.0)
+         * Currently this is read-only until:
+         * - a way to set the X coordinate using pixel numbers is found, or
+         * - a way to normalise the pixel coordinates returned by Cursor.Position.{X,Y} is found.
+         */
+        public double X
         {
             set
             {
-                deltaXOut = deltaXOut + value;
+                if (0.0 <= value && value <= 1.0)
+                {
+                    XOut = (uint)(value * SCALING_FACTOR);
+                }
+                else
+                {
+                    throw new ArgumentOutOfRangeException("X", "X needs to be a normalised screen coordinate between 0 and 1.0.");
+                }
             }
+            //get { return Cursor.Position.X; }
+        }
 
+        /*
+         * Input: Y coordinate as a normalised value (0..1.0)
+         * Currently this is read-only until:
+         * - a way to set the X coordinate using pixel numbers is found, or
+         * - a way to normalise the pixel coordinates returned by Cursor.Position.{X,Y} is found.
+         */
+        public double Y
+        {
+            set 
+            {
+                if (0.0 <= value && value <= 1.0)
+                {
+                    YOut = (uint)(value * SCALING_FACTOR); 
+                }
+                else
+                {
+                    throw new ArgumentOutOfRangeException("Y", "Y needs to be a normalised screen coordinate between 0 and 1.0.");
+                }
+            }
+            //get { return Cursor.Position.Y; }
+        }
+
+        public double DeltaX
+        {
+            set { deltaXOut = deltaXOut + value; }
             get { return CurrentMouseState.X; }
         }
 
@@ -248,6 +310,34 @@ namespace FreePIE.Core.Plugins
         {
             get { return plugin.DeltaY; }
             set { plugin.DeltaY = value; }
+        }
+
+        /*
+         * between 0..1.0
+         */
+        public double X
+        {
+            //get { return plugin.X; }  // see comment in the class above
+            set { plugin.X = value; }
+        }
+
+        /*
+         * between 0..1.0
+         */
+        public double Y
+        {
+            //get { return plugin.Y; }  // see comment in the class above
+            set { plugin.Y = value; }
+        }
+
+        /*
+         * Set this to True to use X, Y and set absolute positions, or set it to False (default)
+         * to use deltaX, deltaY.
+         */
+        public bool absoluteMode
+        {
+            get { return plugin.absolute_mode; }
+            set { plugin.absolute_mode = value; }
         }
 
         public int wheel
